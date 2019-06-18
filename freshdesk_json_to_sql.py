@@ -1,5 +1,7 @@
-import sqlite3
 import json
+import sqlite3
+import sys
+
 
 class FreshdeskJsonToSQLConverter:
     """ A converter to transform the Json data provided by Aginic into a Relational Database """
@@ -68,6 +70,23 @@ class FreshdeskJsonToSQLConverter:
             cursor.execute(create_table_script)
             connection.commit()
 
+    def create_table_notes(self):
+        create_table_script = """
+            CREATE TABLE IF NOT EXISTS NOTES (
+                PERFORMED_AT DATETIME,
+                TICKET_ID INT,
+                NOTE_ID INT,
+                NOTE_TYPE INT,
+                PRIMARY KEY(PERFORMED_AT, TICKET_ID),
+                FOREIGN KEY(PERFORMED_AT) REFERENCES ACTIVITIES(PERFORMED_AT),
+                FOREIGN KEY(TICKET_ID) REFERENCES ACTIVITIES(TICKET_ID)
+            )
+        """
+        with sqlite3.connect(self._database_filename) as connection:
+            cursor = connection.cursor()
+            cursor.execute(create_table_script)
+            connection.commit()
+
     def insert_into_table_metadata(self, metadata):
         insert_into_script = "INSERT OR IGNORE INTO METADATA VALUES (?, ?, ?)"
         with sqlite3.connect(self._database_filename) as connection:
@@ -100,28 +119,45 @@ class FreshdeskJsonToSQLConverter:
                 ))
             connection.commit()
 
+        self.insert_into_notes(performed_at, ticket_id, activity_item["note"])
+
+    def insert_into_notes(self, performed_at, ticket_id, note):
+        insert_into_script = """
+            INSERT OR IGNORE INTO NOTES VALUES
+            (?, ?, ?, ?)
+        """
+        
+        with sqlite3.connect(self._database_filename) as connection:
+            cursor = connection.cursor()
+            cursor.execute(insert_into_script,
+                (performed_at, ticket_id, note["id"], note["type"]))
+            connection.commit()
+
 #testing
 
 if __name__ == "__main__":
-    print("hi")
+    
+    json_filename = sys.argv[1] 
+    database_filename = sys.argv[2]
 
-    database_filename = "new_freshdesk.db"
-    json_filename = "test.json"
     # creates the database
     converter = FreshdeskJsonToSQLConverter(database_filename, json_filename)
     converter.drop_table("METADATA")
-    converter.drop_table("ACTIVITIES")
+    converter.drop_table("NOTES")
     converter.drop_table("ACTIVITY_ITEMS")
+    converter.drop_table("ACTIVITIES")
+    
     converter.create_table_metadata()
     converter.create_table_activities()
     converter.create_table_activity_items()
+    converter.create_table_notes()
 
     #reads the json file and populates the database
     with open(json_filename) as json_file:  
         data = json.load(json_file)
         print(data["metadata"])
-        print("inserting into metadata")
+        print("Inserting into metadata...")
         converter.insert_into_table_metadata(data["metadata"])
-        print("inserting into activities")
+        print("Inserting into activities...")
         for activity_data in data["activities_data"]:
             converter.insert_into_activities(activity_data)
